@@ -650,12 +650,18 @@ document.getElementById("searchInput").addEventListener("input", (e)=>{
 
 async function buscarProductos(q){
   document.getElementById("searchHint").textContent = "Buscando...";
-  const { data, error } = await sb
-    .from("productos")
-    .select("*, proveedores(nombre)")
-    .or(`nombre.ilike.%${q}%,codigo.ilike.%${q}%`)
-    .order("precio_costo", { ascending:true })
-    .limit(100);
+
+  // Buscamos por palabras sueltas: cada palabra tiene que aparecer
+  // (en nombre O en código), sin importar el orden ni qué haya en el medio.
+  const palabras = q.trim().split(/\s+/).filter(Boolean);
+
+  let query = sb.from("productos").select("*, proveedores(nombre)");
+  palabras.forEach(palabra=>{
+    query = query.or(`nombre.ilike.%${palabra}%,codigo.ilike.%${palabra}%`);
+  });
+  query = query.order("precio_costo", { ascending:true }).limit(150);
+
+  const { data, error } = await query;
 
   if(error){
     document.getElementById("searchHint").textContent = "Error al buscar: " + error.message;
