@@ -284,9 +284,14 @@
         Decinos qué columna de tu Excel es cada dato. Así funciona con la lista de cualquier proveedor, sin importar el orden.
       </p>
 
+      <div class="field" style="margin-top:14px;">
+        <label for="startRowSelect">¿En qué fila empieza la tabla de productos? (a veces hay filas de aviso/logo arriba)</label>
+        <select id="startRowSelect"></select>
+      </div>
+
       <div class="checkbox-row">
         <input type="checkbox" id="hasHeader" checked>
-        <label for="hasHeader">La primera fila es el encabezado (títulos de columna)</label>
+        <label for="hasHeader">Esa fila es el encabezado (títulos de columna)</label>
       </div>
 
       <div class="col-select-grid">
@@ -463,7 +468,40 @@ document.getElementById("fileInput").addEventListener("change", (e)=>{
 function prepararModalImportacion(){
   if(excelRows.length===0){ alert("El archivo parece estar vacío."); return; }
 
-  const primeraFila = excelRows[0];
+  // Armamos el selector de "fila de inicio" con las primeras 15 filas del archivo,
+  // mostrando un resumen de cada una para que sea fácil detectar dónde arranca la tabla real.
+  const startSelect = document.getElementById("startRowSelect");
+  const filasPreview = excelRows.slice(0, 15);
+  startSelect.innerHTML = filasPreview.map((fila, i)=>{
+    const resumen = fila.filter(c=>String(c).trim()!=="").slice(0,4).join(" | ") || "(fila vacía)";
+    return `<option value="${i}">Fila ${i+1}: ${resumen.slice(0,60)}</option>`;
+  }).join("");
+
+  // Sugerimos automáticamente la primera fila que "parece" un encabezado real
+  // (varias celdas con texto corto, sin links ni frases largas)
+  const parecehEncabezado = (fila)=>{
+    const textos = fila.filter(c=>String(c).trim()!=="");
+    if(textos.length < 3) return false;
+    return textos.every(c => String(c).length < 30 && !String(c).includes("http"));
+  };
+  const sugerida = filasPreview.findIndex(parecehEncabezado);
+  if(sugerida >= 0) startSelect.value = sugerida;
+
+  startSelect.addEventListener("change", actualizarDesdeFilaInicio);
+  document.getElementById("hasHeader").addEventListener("change", actualizarDesdeFilaInicio);
+
+  actualizarDesdeFilaInicio();
+  document.getElementById("importStatus").textContent = "";
+  document.getElementById("uploadModal").classList.add("open");
+}
+
+let filasActivas = []; // subconjunto de excelRows a partir de la fila elegida
+
+function actualizarDesdeFilaInicio(){
+  const startIdx = parseInt(document.getElementById("startRowSelect").value) || 0;
+  filasActivas = excelRows.slice(startIdx);
+
+  const primeraFila = filasActivas[0] || [];
   const opciones = primeraFila.map((val, i)=> `<option value="${i}">Columna ${i+1} (ej: "${String(val).slice(0,20)}")</option>`).join("");
 
   ["colCodigo","colNombre","colPrecio"].forEach(id=>{
@@ -472,7 +510,6 @@ function prepararModalImportacion(){
   document.getElementById("colCaja").innerHTML =
     `<option value="-1">No aplica (se vende por unidad)</option>` + opciones;
 
-  // Sugerencia automática simple por si algún encabezado coincide
   const header = primeraFila.map(h=>String(h).toLowerCase());
   const tryMatch = (keywords)=> header.findIndex(h => keywords.some(k=>h.includes(k)));
   const iCod = tryMatch(["cod","sku","art"]);
@@ -485,12 +522,10 @@ function prepararModalImportacion(){
   if(iCaja>=0) document.getElementById("colCaja").value = iCaja;
 
   renderPreviewTable();
-  document.getElementById("importStatus").textContent = "";
-  document.getElementById("uploadModal").classList.add("open");
 }
 
 function renderPreviewTable(){
-  const filas = excelRows.slice(0, 6);
+  const filas = filasActivas.slice(0, 6);
   const table = document.getElementById("previewTable");
   table.innerHTML = filas.map((fila, i)=>
     `<tr>${fila.map(celda => `<${i===0?"th":"td"}>${celda}</${i===0?"th":"td"}>`).join("")}</tr>`
@@ -509,7 +544,7 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
   const tieneEncabezado = document.getElementById("hasHeader").checked;
   const statusEl = document.getElementById("importStatus");
 
-  const filas = tieneEncabezado ? excelRows.slice(1) : excelRows;
+  const filas = tieneEncabezado ? filasActivas.slice(1) : filasActivas;
   const productosNuevos = filas
     .filter(f => f[iNom] && String(f[iNom]).trim()!=="")
     .map(f => {
