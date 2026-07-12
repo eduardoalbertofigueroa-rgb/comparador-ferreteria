@@ -510,7 +510,8 @@ function actualizarDesdeFilaInicio(){
   document.getElementById("colCaja").innerHTML =
     `<option value="-1">No aplica (se vende por unidad)</option>` + opciones;
 
-  const header = primeraFila.map(h=>String(h).toLowerCase());
+  const quitarTildes = (s)=> s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const header = primeraFila.map(h=> quitarTildes(String(h).toLowerCase()));
   const tryMatch = (keywords)=> header.findIndex(h => keywords.some(k=>h.includes(k)));
   const iCod = tryMatch(["cod","sku","art"]);
   const iNom = tryMatch(["nombre","descrip","producto","detalle"]);
@@ -553,16 +554,16 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
         const raw = parseFloat(String(f[iCaja] ?? "1").replace(/[^0-9.,-]/g,"").replace(",","."));
         unidadPorCaja = raw > 0 ? raw : 1;
       }
+      const codigoTexto = String(f[iCod] ?? "").trim();
       return {
         user_id: currentUser.id,
         proveedor_id: uploadTargetProvId,
-        codigo: String(f[iCod] ?? "").trim(),
+        codigo: codigoTexto === "" ? null : codigoTexto, // null = nunca choca con otro, siempre se agrega como nuevo
         nombre: String(f[iNom] ?? "").trim(),
         precio_costo: parseFloat(String(f[iPre] ?? "0").replace(/[^0-9.,-]/g,"").replace(",",".")) || 0,
         unidad_por_caja: unidadPorCaja
-        // OJO: "margen" queda afuera a propósito. Si el producto ya existía,
-        // así no le pisamos el margen que el ferretero ya había ajustado a mano.
-        // Si es un producto nuevo, la base de datos le pone 30% por defecto sola.
+        // "margen" queda afuera a propósito: si el producto ya existía, no le pisamos
+        // el margen que el ferretero ya había ajustado a mano.
       };
     });
 
@@ -572,29 +573,13 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
     return;
   }
 
-  // Separamos los que tienen código (se pueden actualizar sin duplicar)
-  // de los que no tienen código (siempre se agregan como nuevos).
-  const conCodigo = productosNuevos.filter(p => p.codigo !== "");
-  const sinCodigo = productosNuevos.filter(p => p.codigo === "");
-
   statusEl.textContent = `Importando ${productosNuevos.length} productos...`;
   statusEl.className = "status-note";
 
   const tanda = 500;
-
-  for(let i=0; i<conCodigo.length; i+=tanda){
-    const lote = conCodigo.slice(i, i+tanda);
+  for(let i=0; i<productosNuevos.length; i+=tanda){
+    const lote = productosNuevos.slice(i, i+tanda);
     const { error } = await sb.from("productos").upsert(lote, { onConflict: "proveedor_id,codigo" });
-    if(error){
-      statusEl.textContent = "Error al importar: " + error.message;
-      statusEl.className = "status-note err";
-      return;
-    }
-  }
-
-  for(let i=0; i<sinCodigo.length; i+=tanda){
-    const lote = sinCodigo.slice(i, i+tanda);
-    const { error } = await sb.from("productos").insert(lote);
     if(error){
       statusEl.textContent = "Error al importar: " + error.message;
       statusEl.className = "status-note err";
