@@ -514,8 +514,6 @@ document.getElementById("fileInput").addEventListener("change", (e)=>{
 function prepararModalImportacion(){
   if(excelRows.length===0){ alert("El archivo parece estar vacío."); return; }
 
-  // Armamos el selector de "fila de inicio" con las primeras 15 filas del archivo,
-  // mostrando un resumen de cada una para que sea fácil detectar dónde arranca la tabla real.
   const startSelect = document.getElementById("startRowSelect");
   const filasPreview = excelRows.slice(0, 15);
   startSelect.innerHTML = filasPreview.map((fila, i)=>{
@@ -523,21 +521,43 @@ function prepararModalImportacion(){
     return `<option value="${i}">Fila ${i+1}: ${resumen.slice(0,60)}</option>`;
   }).join("");
 
-  // Sugerimos automáticamente la primera fila que "parece" un encabezado real
-  // (varias celdas con texto corto, sin links ni frases largas)
-  const parecehEncabezado = (fila)=>{
-    const textos = fila.filter(c=>String(c).trim()!=="");
-    if(textos.length < 3) return false;
-    return textos.every(c => String(c).length < 30 && !String(c).includes("http"));
-  };
-  const sugerida = filasPreview.findIndex(parecehEncabezado);
-  if(sugerida >= 0) startSelect.value = sugerida;
+  // ¿Ya sabemos cómo viene armada la lista de ESTE proveedor, de una vez anterior?
+  const proveedorActual = proveedores.find(p => p.id === uploadTargetProvId);
+  const configGuardada = proveedorActual ? proveedorActual.config : null;
 
+  if(configGuardada && configGuardada.startRow < filasPreview.length){
+    startSelect.value = configGuardada.startRow;
+  } else {
+    const parecehEncabezado = (fila)=>{
+      const textos = fila.filter(c=>String(c).trim()!=="");
+      if(textos.length < 3) return false;
+      return textos.every(c => String(c).length < 30 && !String(c).includes("http"));
+    };
+    const sugerida = filasPreview.findIndex(parecehEncabezado);
+    if(sugerida >= 0) startSelect.value = sugerida;
+  }
+
+  startSelect.removeEventListener("change", actualizarDesdeFilaInicio);
+  document.getElementById("hasHeader").removeEventListener("change", actualizarDesdeFilaInicio);
   startSelect.addEventListener("change", actualizarDesdeFilaInicio);
   document.getElementById("hasHeader").addEventListener("change", actualizarDesdeFilaInicio);
 
   actualizarDesdeFilaInicio();
-  document.getElementById("importStatus").textContent = "";
+
+  if(configGuardada){
+    document.getElementById("hasHeader").checked = configGuardada.hasHeader;
+    document.getElementById("colCodigo").value = configGuardada.colCodigo;
+    document.getElementById("colNombre").value = configGuardada.colNombre;
+    document.getElementById("colPrecio").value = configGuardada.colPrecio;
+    document.getElementById("colCaja").value = configGuardada.colCaja;
+    document.getElementById("colMoneda").value = configGuardada.moneda || "ARS";
+    document.getElementById("tipoCambio").value = configGuardada.tipoCambio || "";
+    document.getElementById("importStatus").innerHTML =
+      `<span style="color:var(--ok)">✓ Usamos la misma configuración que la última vez que cargaste este proveedor. Revisá la vista previa y confirmá.</span>`;
+  } else {
+    document.getElementById("importStatus").textContent = "";
+  }
+
   document.getElementById("uploadModal").classList.add("open");
 }
 
@@ -667,6 +687,18 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
   statusEl.textContent = `✅ Se importaron ${listaFinal.length} productos correctamente.` +
     (duplicadosQuitados > 0 ? ` (${duplicadosQuitados} filas tenían un código repetido en el archivo y se unificaron, quedándose con el último precio.)` : "");
   statusEl.className = "status-note ok";
+
+  // Guardamos cómo mapeamos este archivo, para que la próxima vez que este mismo
+  // proveedor mande una lista nueva, no haya que volver a configurar nada.
+  const configAGuardar = {
+    startRow: parseInt(document.getElementById("startRowSelect").value),
+    hasHeader: tieneEncabezado,
+    colCodigo: iCod, colNombre: iNom, colPrecio: iPre, colCaja: iCaja,
+    moneda: monedaBase, tipoCambio: tipoCambioVal
+  };
+  await sb.from("proveedores").update({ config: configAGuardar }).eq("id", uploadTargetProvId);
+  const provEnMemoria = proveedores.find(p=>p.id===uploadTargetProvId);
+  if(provEnMemoria) provEnMemoria.config = configAGuardar;
   cargarProveedores();
   setTimeout(()=> document.getElementById("uploadModal").classList.remove("open"), 1200);
 });
@@ -782,3 +814,4 @@ async function actualizarMargen(id, nuevoMargen, inputEl){
 </script>
 </body>
 </html>
+
