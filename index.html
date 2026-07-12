@@ -469,7 +469,7 @@ async function chequearSuscripcion(user){
 
   // Si es la primera vez que este usuario entra, le creamos su perfil de prueba (15 días).
   if(!data && !error){
-    const { data: nuevo } = await sb.from("perfiles").insert({ user_id: user.id }).select().maybeSingle();
+    const { data: nuevo } = await sb.from("perfiles").insert({ user_id: user.id, email: user.email }).select().maybeSingle();
     data = nuevo;
   }
 
