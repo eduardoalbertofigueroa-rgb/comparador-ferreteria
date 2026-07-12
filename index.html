@@ -191,7 +191,7 @@
   @media (max-width:700px){ .col-select-grid{grid-template-columns:1fr 1fr;} }
   @media (max-width:460px){ .col-select-grid{grid-template-columns:1fr;} }
   .col-select-grid label{display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:5px;}
-  .col-select-grid select{
+  .col-select-grid select, .col-select-grid input{
     width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-family:inherit; font-size:13px;
   }
   .preview-table{
@@ -293,6 +293,23 @@
         <input type="checkbox" id="hasHeader" checked>
         <label for="hasHeader">Esa fila es el encabezado (títulos de columna)</label>
       </div>
+
+      <div class="col-select-grid" style="grid-template-columns:1fr 1fr; margin-top:4px;">
+        <div>
+          <label>¿En qué moneda está la MAYORÍA de esta lista?</label>
+          <select id="colMoneda">
+            <option value="ARS">Pesos (ARS)</option>
+            <option value="USD">Dólares (USD)</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo de cambio hoy (1 USD = $ )</label>
+          <input type="number" id="tipoCambio" placeholder="ej: 1350">
+        </div>
+      </div>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:-8px;">
+        Si el archivo tiene secciones marcadas como "Precios en dólares" en el medio (algunos proveedores hacen esto), no hace falta que hagas nada especial: la herramienta las detecta sola y convierte esa parte usando el tipo de cambio de arriba. Completá el tipo de cambio aunque tu lista sea toda en pesos, por las dudas tenga alguna sección en dólares escondida.
+      </p>
 
       <div class="col-select-grid">
         <div>
@@ -575,26 +592,45 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
   const statusEl = document.getElementById("importStatus");
 
   const filas = tieneEncabezado ? filasActivas.slice(1) : filasActivas;
-  const productosNuevos = filas
-    .filter(f => f[iNom] && String(f[iNom]).trim()!=="")
-    .map(f => {
-      let unidadPorCaja = 1;
-      if(iCaja >= 0){
-        const raw = parseFloat(String(f[iCaja] ?? "1").replace(/[^0-9.,-]/g,"").replace(",","."));
-        unidadPorCaja = raw > 0 ? raw : 1;
-      }
-      const codigoTexto = String(f[iCod] ?? "").trim();
-      return {
-        user_id: currentUser.id,
-        proveedor_id: uploadTargetProvId,
-        codigo: codigoTexto === "" ? null : codigoTexto, // null = nunca choca con otro, siempre se agrega como nuevo
-        nombre: String(f[iNom] ?? "").trim(),
-        precio_costo: parseFloat(String(f[iPre] ?? "0").replace(/[^0-9.,-]/g,"").replace(",",".")) || 0,
-        unidad_por_caja: unidadPorCaja
-        // "margen" queda afuera a propósito: si el producto ya existía, no le pisamos
-        // el margen que el ferretero ya había ajustado a mano.
-      };
+  const monedaBase = document.getElementById("colMoneda").value; // moneda general elegida para el archivo
+  const tipoCambioVal = parseFloat(document.getElementById("tipoCambio").value) || 0;
+
+  let monedaActual = monedaBase; // arranca según lo elegido; puede cambiar sola si el archivo trae avisos
+  const productosNuevos = [];
+
+  for(const f of filas){
+    const todasCeldas = f.map(c=>String(c ?? "").toUpperCase());
+    const esAvisoDolar = todasCeldas.some(c => /D[OÓ]LAR|U\$S|USD/.test(c));
+    const esAvisoPeso = todasCeldas.some(c => /\bPESO/.test(c));
+
+    // Filas que son solo un aviso de moneda ("PRECIOS EN DOLARES", etc.) no son productos:
+    // las usamos para cambiar el estado, y las salteamos.
+    if(esAvisoDolar){ monedaActual = "USD"; continue; }
+    if(esAvisoPeso){ monedaActual = "ARS"; continue; }
+
+    const nombreVal = f[iNom];
+    if(!nombreVal || String(nombreVal).trim()==="") continue;
+
+    let precioLeido = parseFloat(String(f[iPre] ?? "0").replace(/[^0-9.,-]/g,"").replace(",",".")) || 0;
+    if(monedaActual === "USD") precioLeido = precioLeido * (tipoCambioVal || 1);
+    if(precioLeido <= 0) continue; // fila sin precio real, probablemente un título/categoría, no un producto
+
+    let unidadPorCaja = 1;
+    if(iCaja >= 0){
+      const raw = parseFloat(String(f[iCaja] ?? "1").replace(/[^0-9.,-]/g,"").replace(",","."));
+      unidadPorCaja = raw > 0 ? raw : 1;
+    }
+    const codigoTexto = String(f[iCod] ?? "").trim();
+
+    productosNuevos.push({
+      user_id: currentUser.id,
+      proveedor_id: uploadTargetProvId,
+      codigo: codigoTexto === "" ? null : codigoTexto,
+      nombre: String(nombreVal).trim(),
+      precio_costo: precioLeido,
+      unidad_por_caja: unidadPorCaja
     });
+  }
 
   if(productosNuevos.length===0){
     statusEl.textContent = "No se encontraron filas válidas para importar.";
