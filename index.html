@@ -210,6 +210,33 @@
 </head>
 <body>
 
+  <!-- Pantalla de bloqueo (suscripción vencida o inactiva) -->
+  <div class="login-screen" id="lockScreen" style="display:none;">
+    <div class="login-box" style="text-align:center;">
+      <div style="font-size:34px; margin-bottom:10px;">🔒</div>
+      <h1>Tu período de prueba terminó</h1>
+      <div class="sub" id="lockMsg">Para seguir usando el Comparador, escribinos y te activamos el acceso.</div>
+      <a id="lockWhatsapp" class="btn btn-primary" href="#" target="_blank" rel="noopener" style="text-decoration:none; display:flex;">📲 Escribirnos por WhatsApp</a>
+      <button class="btn btn-outline" id="btnLogoutLock" style="margin-top:10px;">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <!-- Pantalla: pedir nueva contraseña (tras click en el link del mail) -->
+  <div class="login-screen" id="resetScreen" style="display:none;">
+    <div class="login-box">
+      <div class="mark">🔍</div>
+      <h1>Elegí tu nueva contraseña</h1>
+      <div class="sub">Este link vino de tu email de recuperación.</div>
+      <div class="field">
+        <label for="newPass1">Nueva contraseña</label>
+        <input type="password" id="newPass1" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" id="btnSetNewPass">Guardar nueva contraseña</button>
+      <div id="resetMsg" class="login-msg" style="display:none;"></div>
+      <div id="resetError" class="login-error" style="display:none;"></div>
+    </div>
+  </div>
+
   <!-- ===================== LOGIN ===================== -->
   <div class="login-screen" id="loginScreen">
     <div class="login-box">
@@ -229,8 +256,19 @@
       <div class="login-toggle">
         ¿Todavía no tenés cuenta? <a id="toggleSignup">Crear una cuenta</a>
       </div>
+      <div class="login-toggle" style="margin-top:4px;">
+        <a id="olvidePass">¿Olvidaste tu contraseña?</a>
+      </div>
       <div id="loginError" class="login-error" style="display:none;"></div>
       <div id="loginMsg" class="login-msg" style="display:none;"></div>
+
+      <div id="forgotBox" style="display:none; margin-top:16px; border-top:1px solid var(--line); padding-top:16px;">
+        <div class="field">
+          <label for="forgotEmail">Escribí tu email para recuperarla</label>
+          <input type="email" id="forgotEmail" placeholder="tu@email.com">
+        </div>
+        <button class="btn btn-outline" id="btnForgotSend">Enviar link de recuperación</button>
+      </div>
     </div>
   </div>
 
@@ -343,6 +381,7 @@
 /* ================== CONFIGURACIÓN DE SUPABASE ================== */
 const SUPABASE_URL = "https://uvklsuadaryybjkqteet.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wVWL-o7nfT4aHxjBD5XrQw_P1zcZ8pD";
+const WHATSAPP_SOPORTE = "5492364316208"; // tu número, para cuando alguien necesita reactivar su cuenta
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
@@ -387,17 +426,89 @@ document.getElementById("btnLogout").addEventListener("click", async ()=>{
   await sb.auth.signOut();
 });
 
-sb.auth.onAuthStateChange((event, session)=>{
+document.getElementById("olvidePass").addEventListener("click", ()=>{
+  const box = document.getElementById("forgotBox");
+  box.style.display = box.style.display === "none" ? "block" : "none";
+});
+
+document.getElementById("btnForgotSend").addEventListener("click", async ()=>{
+  const email = document.getElementById("forgotEmail").value.trim();
+  if(!email){ alert("Escribí tu email primero."); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href.split("#")[0]
+  });
+  if(error){ alert("No se pudo enviar el email: " + error.message); return; }
+  alert("Listo, te mandamos un email con un link para elegir una contraseña nueva. Revisá tu bandeja de entrada (y spam, por las dudas).");
+  document.getElementById("forgotBox").style.display = "none";
+});
+
+document.getElementById("btnSetNewPass").addEventListener("click", async ()=>{
+  const nueva = document.getElementById("newPass1").value;
+  const errEl = document.getElementById("resetError");
+  const msgEl = document.getElementById("resetMsg");
+  errEl.style.display = "none"; msgEl.style.display = "none";
+  if(!nueva || nueva.length < 6){ errEl.textContent = "La contraseña debe tener al menos 6 caracteres."; errEl.style.display="block"; return; }
+
+  const { error } = await sb.auth.updateUser({ password: nueva });
+  if(error){ errEl.textContent = error.message; errEl.style.display = "block"; return; }
+  msgEl.textContent = "¡Contraseña actualizada! Ya podés usar la app con normalidad.";
+  msgEl.style.display = "block";
+});
+
+document.getElementById("btnLogoutLock").addEventListener("click", async ()=>{ await sb.auth.signOut(); });
+
+function ocultarTodasLasPantallas(){
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("resetScreen").style.display = "none";
+  document.getElementById("lockScreen").style.display = "none";
+  document.getElementById("app").style.display = "none";
+}
+
+async function chequearSuscripcion(user){
+  let { data, error } = await sb.from("perfiles").select("*").eq("user_id", user.id).maybeSingle();
+
+  // Si es la primera vez que este usuario entra, le creamos su perfil de prueba (15 días).
+  if(!data && !error){
+    const { data: nuevo } = await sb.from("perfiles").insert({ user_id: user.id }).select().maybeSingle();
+    data = nuevo;
+  }
+
+  if(!data) return true; // si algo falla, no le bloqueamos el acceso por un error nuestro
+
+  const hoy = new Date().toISOString().slice(0,10);
+  const activo = data.activo && (!data.vence || data.vence >= hoy);
+  if(!activo){
+    document.getElementById("lockMsg").textContent = data.vence
+      ? `Tu prueba venció el ${new Date(data.vence).toLocaleDateString("es-AR")}. Escribinos y te activamos el acceso.`
+      : `Tu acceso está desactivado por ahora. Escribinos y lo resolvemos.`;
+    document.getElementById("lockWhatsapp").href =
+      `https://wa.me/${WHATSAPP_SOPORTE}?text=${encodeURIComponent("Hola, quiero activar mi acceso al Comparador de Precios.")}`;
+  }
+  return activo;
+}
+
+sb.auth.onAuthStateChange(async (event, session)=>{
+  if(event === "PASSWORD_RECOVERY"){
+    ocultarTodasLasPantallas();
+    document.getElementById("resetScreen").style.display = "flex";
+    return;
+  }
+
   if(session && session.user){
     currentUser = session.user;
-    document.getElementById("loginScreen").style.display = "none";
+    const activo = await chequearSuscripcion(currentUser);
+    ocultarTodasLasPantallas();
+    if(!activo){
+      document.getElementById("lockScreen").style.display = "flex";
+      return;
+    }
     document.getElementById("app").style.display = "block";
     document.getElementById("userEmail").textContent = currentUser.email;
     cargarProveedores();
   } else {
     currentUser = null;
+    ocultarTodasLasPantallas();
     document.getElementById("loginScreen").style.display = "flex";
-    document.getElementById("app").style.display = "none";
   }
 });
 
