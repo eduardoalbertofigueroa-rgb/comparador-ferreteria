@@ -573,12 +573,24 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
     return;
   }
 
-  statusEl.textContent = `Importando ${productosNuevos.length} productos...`;
+  // Si el mismo código aparece más de una vez en el archivo, Postgres no permite
+  // actualizarlo dos veces en la misma operación. Nos quedamos con la última
+  // aparición de cada código (normalmente la más actualizada dentro del archivo).
+  const porCodigo = new Map();
+  const sinCodigoLista = [];
+  productosNuevos.forEach(p=>{
+    if(p.codigo === null) sinCodigoLista.push(p);
+    else porCodigo.set(p.codigo, p);
+  });
+  const listaFinal = [...porCodigo.values(), ...sinCodigoLista];
+  const duplicadosQuitados = productosNuevos.length - listaFinal.length;
+
+  statusEl.textContent = `Importando ${listaFinal.length} productos...`;
   statusEl.className = "status-note";
 
   const tanda = 500;
-  for(let i=0; i<productosNuevos.length; i+=tanda){
-    const lote = productosNuevos.slice(i, i+tanda);
+  for(let i=0; i<listaFinal.length; i+=tanda){
+    const lote = listaFinal.slice(i, i+tanda);
     const { error } = await sb.from("productos").upsert(lote, { onConflict: "proveedor_id,codigo" });
     if(error){
       statusEl.textContent = "Error al importar: " + error.message;
@@ -587,7 +599,8 @@ document.getElementById("btnConfirmImport").addEventListener("click", async ()=>
     }
   }
 
-  statusEl.textContent = `✅ Se importaron ${productosNuevos.length} productos correctamente.`;
+  statusEl.textContent = `✅ Se importaron ${listaFinal.length} productos correctamente.` +
+    (duplicadosQuitados > 0 ? ` (${duplicadosQuitados} filas tenían un código repetido en el archivo y se unificaron, quedándose con el último precio.)` : "");
   statusEl.className = "status-note ok";
   cargarProveedores();
   setTimeout(()=> document.getElementById("uploadModal").classList.remove("open"), 1200);
