@@ -473,7 +473,19 @@ document.getElementById("fileInput").addEventListener("change", (e)=>{
     const data = new Uint8Array(ev.target.result);
     const wb = XLSX.read(data, { type:"array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rowsCrudas = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:"" });
+
+    // Limitamos el RANGO antes de leer la hoja, así SheetJS ni se molesta en
+    // procesar miles de columnas fantasma vacías (eso es lo que trababa el
+    // navegador con archivos grandes: no era la cantidad de filas, era leer
+    // de más a lo ancho).
+    let rangeLimitado = null;
+    if(ws["!ref"]){
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+      if(range.e.c > 60) range.e.c = 60; // tope de 61 columnas, de sobra para cualquier lista real
+      rangeLimitado = XLSX.utils.encode_range(range);
+    }
+
+    const rowsCrudas = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:"", range: rangeLimitado || undefined });
     excelRows = limitarColumnasReales(rowsCrudas);
     prepararModalImportacion();
   };
