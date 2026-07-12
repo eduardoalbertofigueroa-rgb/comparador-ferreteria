@@ -544,7 +544,7 @@ function actualizarDesdeFilaInicio(){
   const tryMatch = (keywords)=> header.findIndex(h => keywords.some(k=>h.includes(k)));
   const iCod = tryMatch(["cod","sku","art"]);
   const iNom = tryMatch(["nombre","descrip","producto","detalle"]);
-  const iPre = tryMatch(["precio","costo","$"]);
+  const iPre = tryMatch(["precio","costo","neto","iva","lista","importe","valor","$"]);
   const iCaja = tryMatch(["caja","bulto","paq","pack","x un","xun","envase"]);
   if(iCod>=0) document.getElementById("colCodigo").value = iCod;
   if(iNom>=0) document.getElementById("colNombre").value = iNom;
