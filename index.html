@@ -414,12 +414,22 @@ function renderProveedores(){
 }
 
 document.getElementById("btnAddProv").addEventListener("click", async ()=>{
-  const nombre = document.getElementById("newProvName").value.trim();
-  if(!nombre) return;
+  const input = document.getElementById("newProvName");
+  const nombre = input.value.trim();
+  if(!nombre){
+    input.style.borderColor = "var(--danger)";
+    input.placeholder = "Escribí un nombre antes de tocar +";
+    input.focus();
+    return;
+  }
+  input.style.borderColor = "";
   const { error } = await sb.from("proveedores").insert({ user_id: currentUser.id, nombre });
   if(error){ alert("No se pudo agregar: " + error.message); return; }
-  document.getElementById("newProvName").value = "";
+  input.value = "";
   cargarProveedores();
+});
+document.getElementById("newProvName").addEventListener("keydown", (e)=>{
+  if(e.key === "Enter") document.getElementById("btnAddProv").click();
 });
 
 async function borrarProveedor(id){
