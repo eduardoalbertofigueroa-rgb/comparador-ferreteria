@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comparador de Precios · Ferretería</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  /* ============================================================
+     COMPARADOR DE PRECIOS — misma línea visual que el Presupuestador
+     (paper + tinta oscura + acento ámbar), pensado para buscar rápido
+     y sin ruido en pantalla.
+
+     CONFIGURACIÓN (más abajo en el <script>):
+     - SUPABASE_URL y SUPABASE_KEY: los datos de tu proyecto de Supabase.
+     - Las tablas "proveedores" y "productos" ya deberían existir
+       (las creamos juntos con el SQL en el editor de Supabase).
+     ============================================================ */
+
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  :root{
+    --paper:#EEF2F1;
+    --paper-deep:#E3E9E7;
+    --ink:#151B1E;
+    --ink-soft:#4B5757;
+    --line:#C9D2CF;
+    --accent:#E8A33D;
+    --accent-deep:#B5721F;
+    --accent-ink:#3A2609;
+    --ok:#2F6E52;
+    --danger:#B3261E;
+    --card:#FFFFFF;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(21,27,30,0.06), 0 8px 24px -12px rgba(21,27,30,0.18);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      linear-gradient(var(--paper-deep) 1px, transparent 1px) 0 0/100% 28px,
+      linear-gradient(90deg, var(--paper-deep) 1px, transparent 1px) 0 0/28px 100%,
+      var(--paper);
+    color:var(--ink); font-family:'Inter', sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  h1,h2,h3{font-family:'Space Grotesk', sans-serif; margin:0;}
+  button{font-family:inherit;}
+
+  /* ---------- Login ---------- */
+  .login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-box{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); max-width:380px; width:100%; padding:32px 28px;
+  }
+  .login-box .mark{
+    width:46px; height:46px; border-radius:8px; background:var(--ink); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-size:20px; margin-bottom:14px;
+  }
+  .login-box h1{font-size:20px; margin-bottom:4px;}
+  .login-box .sub{font-size:13px; color:var(--ink-soft); margin-bottom:22px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:5px;}
+  .field input{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:7px;
+    font-family:inherit; font-size:14px; background:var(--paper);
+  }
+  .field input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:11px 16px; border-radius:8px; font-size:14.5px; font-weight:600;
+    border:none; cursor:pointer; font-family:inherit; width:100%;
+  }
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-primary:hover{background:#D6922F;}
+  .btn-outline{background:transparent; border:1px solid var(--ink); color:var(--ink);}
+  .btn-outline:hover{background:var(--ink); color:var(--paper);}
+  .login-toggle{
+    text-align:center; margin-top:14px; font-size:13px; color:var(--ink-soft);
+  }
+  .login-toggle a{color:var(--accent-deep); cursor:pointer; font-weight:600; text-decoration:none;}
+  .login-error{color:var(--danger); font-size:12.5px; margin-top:10px;}
+  .login-msg{color:var(--ok); font-size:12.5px; margin-top:10px;}
+
+  /* ---------- App ---------- */
+  .app{display:none;}
+  header{
+    padding:16px 20px; display:flex; align-items:center; justify-content:space-between;
+    max-width:1180px; margin:0 auto; gap:12px; flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .mark{
+    width:40px; height:40px; border-radius:8px; background:var(--ink); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;
+  }
+  .brand h1{font-size:18px;}
+  .brand .sub{font-size:12px; color:var(--ink-soft);}
+  .user-chip{
+    font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; gap:10px;
+    background:var(--card); border:1px solid var(--line); border-radius:100px; padding:6px 14px;
+  }
+  .user-chip button{
+    background:none; border:none; color:var(--danger); font-size:12.5px; cursor:pointer; font-weight:600;
+  }
+
+  .wrap{max-width:1180px; margin:0 auto; padding:0 20px 60px; display:grid; grid-template-columns:280px 1fr; gap:20px; align-items:start;}
+  @media (max-width:860px){ .wrap{grid-template-columns:1fr;} }
+
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px;}
+  .panel h2{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); margin-bottom:12px;}
+
+  .prov-item{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:9px 0; border-bottom:1px solid var(--line); font-size:13.5px;
+  }
+  .prov-item:last-child{border-bottom:none;}
+  .prov-item .name{font-weight:600;}
+  .prov-item .count{font-size:11.5px; color:var(--ink-soft); display:block;}
+  .prov-actions{display:flex; gap:6px; flex-shrink:0;}
+  .icon-btn{
+    background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer;
+    font-size:13px; padding:4px 7px; color:var(--ink-soft);
+  }
+  .icon-btn:hover{border-color:var(--ink); color:var(--ink);}
+  .icon-btn.danger:hover{border-color:var(--danger); color:var(--danger);}
+
+  .add-prov{display:flex; gap:6px; margin-top:12px;}
+  .add-prov input{
+    flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-family:inherit; font-size:13px;
+  }
+  .add-prov button{
+    background:var(--ink); color:var(--paper); border:none; border-radius:6px; padding:8px 12px;
+    font-size:13px; cursor:pointer; font-weight:600;
+  }
+  .empty-note{font-size:12.5px; color:var(--ink-soft);}
+
+  /* ---------- Buscador ---------- */
+  .search-hero{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:22px; margin-bottom:16px;
+  }
+  .search-hero input{
+    width:100%; padding:15px 18px; border-radius:9px; border:1.5px solid var(--line);
+    font-size:16px; font-family:inherit; background:var(--paper);
+  }
+  .search-hero input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .search-hint{font-size:12px; color:var(--ink-soft); margin-top:8px;}
+
+  .result-card{
+    background:var(--card); border:1px solid var(--line); border-radius:9px;
+    box-shadow:var(--shadow); padding:14px 16px; margin-bottom:10px;
+    display:grid; grid-template-columns:1fr auto auto auto; gap:14px; align-items:center;
+  }
+  @media (max-width:700px){ .result-card{grid-template-columns:1fr; } }
+  .result-card.best{border-color:var(--accent); background:#FFFBF3;}
+  .result-info .r-nombre{font-weight:600; font-size:14.5px;}
+  .result-info .r-meta{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+  .best-badge{
+    display:inline-block; background:var(--accent); color:var(--accent-ink); font-size:10.5px;
+    font-weight:700; padding:2px 8px; border-radius:100px; margin-left:8px; vertical-align:middle;
+  }
+  .r-costo{text-align:right;}
+  .r-costo .label{display:block; font-size:11px; color:var(--ink-soft);}
+  .r-costo .val{font-family:'IBM Plex Mono', monospace; font-size:14px;}
+  .r-margen{display:flex; flex-direction:column; align-items:center; gap:4px;}
+  .r-margen label{font-size:11px; color:var(--ink-soft);}
+  .r-margen input{
+    width:64px; padding:5px 6px; border:1px solid var(--line); border-radius:6px;
+    font-family:'IBM Plex Mono', monospace; font-size:13px; text-align:center;
+  }
+  .r-venta{text-align:right;}
+  .r-venta .label{display:block; font-size:11px; color:var(--ink-soft);}
+  .r-venta .val{font-family:'IBM Plex Mono', monospace; font-size:16px; font-weight:700; color:var(--ok);}
+
+  /* ---------- Modal subir excel ---------- */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(21,27,30,.55);
+    align-items:center; justify-content:center; z-index:50; padding:16px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal-box{
+    background:var(--card); border-radius:var(--radius); max-width:640px; width:100%;
+    max-height:86vh; overflow-y:auto; padding:22px 24px; box-shadow:var(--shadow);
+  }
+  .modal-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .modal-close{background:none; border:none; font-size:18px; cursor:pointer; color:var(--ink-soft);}
+  .col-select-grid{display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; margin:16px 0;}
+  @media (max-width:700px){ .col-select-grid{grid-template-columns:1fr 1fr;} }
+  @media (max-width:460px){ .col-select-grid{grid-template-columns:1fr;} }
+  .col-select-grid label{display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:5px;}
+  .col-select-grid select{
+    width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-family:inherit; font-size:13px;
+  }
+  .preview-table{
+    width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;
+  }
+  .preview-table th, .preview-table td{
+    border:1px solid var(--line); padding:6px 8px; text-align:left; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:160px;
+  }
+  .preview-table th{background:var(--paper); font-family:'IBM Plex Mono', monospace; font-weight:600;}
+  .checkbox-row{display:flex; align-items:center; gap:8px; font-size:13px; margin-top:14px;}
+  .status-note{font-size:12.5px; margin-top:12px;}
+  .status-note.ok{color:var(--ok);}
+  .status-note.err{color:var(--danger);}
+</style>
+</head>
+<body>
+
+  <!-- ===================== LOGIN ===================== -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-box">
+      <div class="mark">🔍</div>
+      <h1>Comparador de Precios</h1>
+      <div class="sub">Buscá un producto en todos tus proveedores a la vez.</div>
+
+      <div class="field">
+        <label for="loginEmail">Email</label>
+        <input type="email" id="loginEmail" placeholder="tu@email.com">
+      </div>
+      <div class="field">
+        <label for="loginPass">Contraseña</label>
+        <input type="password" id="loginPass" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" id="btnLogin">Ingresar</button>
+      <div class="login-toggle">
+        ¿Todavía no tenés cuenta? <a id="toggleSignup">Crear una cuenta</a>
+      </div>
+      <div id="loginError" class="login-error" style="display:none;"></div>
+      <div id="loginMsg" class="login-msg" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- ===================== APP ===================== -->
+  <div class="app" id="app">
+    <header>
+      <div class="brand">
+        <div class="mark">🔍</div>
+        <div>
+          <h1>Comparador de Precios</h1>
+          <div class="sub">Ferretería · listas de todos tus proveedores en un solo buscador</div>
+        </div>
+      </div>
+      <div class="user-chip">
+        <span id="userEmail"></span>
+        <button id="btnLogout">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <!-- Panel de proveedores -->
+      <section class="panel">
+        <h2>Proveedores</h2>
+        <div id="provList"></div>
+        <div class="add-prov">
+          <input type="text" id="newProvName" placeholder="Nombre del proveedor">
+          <button id="btnAddProv">+</button>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;">
+      </section>
+
+      <!-- Buscador y resultados -->
+      <section>
+        <div class="search-hero">
+          <input type="text" id="searchInput" placeholder="Buscá un producto... ej: destornillador phillips">
+          <div class="search-hint" id="searchHint">Escribí al menos 2 letras para buscar en todas tus listas.</div>
+        </div>
+        <div id="resultsContainer"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: mapear columnas del Excel ===================== -->
+  <div class="modal-overlay" id="uploadModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>📄 Importar lista de precios</h3>
+        <button class="modal-close" id="uploadClose">✕</button>
+      </div>
+      <p style="font-size:13.5px; color:var(--ink-soft);">
+        Decinos qué columna de tu Excel es cada dato. Así funciona con la lista de cualquier proveedor, sin importar el orden.
+      </p>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="hasHeader" checked>
+        <label for="hasHeader">La primera fila es el encabezado (títulos de columna)</label>
+      </div>
+
+      <div class="col-select-grid">
+        <div>
+          <label>Columna Código</label>
+          <select id="colCodigo"></select>
+        </div>
+        <div>
+          <label>Columna Nombre</label>
+          <select id="colNombre"></select>
+        </div>
+        <div>
+          <label>Columna Precio</label>
+          <select id="colPrecio"></select>
+        </div>
+        <div>
+          <label>Columna "Unidades por caja" (opcional)</label>
+          <select id="colCaja"></select>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="preview-table" id="previewTable"></table>
+      </div>
+
+      <button class="btn btn-primary" id="btnConfirmImport" style="margin-top:16px;">Importar productos</button>
+      <div id="importStatus" class="status-note"></div>
+    </div>
+  </div>
+
+<script>
+/* ================== CONFIGURACIÓN DE SUPABASE ================== */
+const SUPABASE_URL = "https://uvklsuadaryybjkqteet.supabase.co";
+const SUPABASE_KEY = "sb_publishable_wVWL-o7nfT4aHxjBD5XrQw_P1zcZ8pD";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let proveedores = [];
+let uploadTargetProvId = null;
+let excelRows = []; // filas crudas del último excel leído
+
+/* ================== AUTENTICACIÓN ================== */
+let modoSignup = false;
+
+document.getElementById("toggleSignup").addEventListener("click", ()=>{
+  modoSignup = !modoSignup;
+  document.getElementById("btnLogin").textContent = modoSignup ? "Crear cuenta" : "Ingresar";
+  document.getElementById("toggleSignup").parentElement.innerHTML =
+    modoSignup
+      ? '¿Ya tenés cuenta? <a id="toggleSignup">Iniciar sesión</a>'
+      : '¿Todavía no tenés cuenta? <a id="toggleSignup">Crear una cuenta</a>';
+  document.getElementById("toggleSignup").addEventListener("click", arguments.callee);
+});
+
+document.getElementById("btnLogin").addEventListener("click", async ()=>{
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPass").value;
+  const errEl = document.getElementById("loginError");
+  const msgEl = document.getElementById("loginMsg");
+  errEl.style.display = "none"; msgEl.style.display = "none";
+
+  if(!email || !password){ errEl.textContent = "Completá email y contraseña."; errEl.style.display="block"; return; }
+
+  if(modoSignup){
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if(error){ errEl.textContent = error.message; errEl.style.display="block"; return; }
+    msgEl.textContent = "Cuenta creada. Iniciando sesión...";
+    msgEl.style.display = "block";
+  } else {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if(error){ errEl.textContent = "Email o contraseña incorrectos."; errEl.style.display="block"; return; }
+  }
+});
+
+document.getElementById("btnLogout").addEventListener("click", async ()=>{
+  await sb.auth.signOut();
+});
+
+sb.auth.onAuthStateChange((event, session)=>{
+  if(session && session.user){
+    currentUser = session.user;
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    document.getElementById("userEmail").textContent = currentUser.email;
+    cargarProveedores();
+  } else {
+    currentUser = null;
+    document.getElementById("loginScreen").style.display = "flex";
+    document.getElementById("app").style.display = "none";
+  }
+});
+
+/* ================== PROVEEDORES ================== */
+async function cargarProveedores(){
+  const { data, error } = await sb.from("proveedores").select("*").order("nombre");
+  if(error){ console.error(error); return; }
+  proveedores = data || [];
+
+  // contamos productos por proveedor
+  for(const p of proveedores){
+    const { count } = await sb.from("productos").select("*", { count:"exact", head:true }).eq("proveedor_id", p.id);
+    p.count = count || 0;
+  }
+  renderProveedores();
+}
+
+function renderProveedores(){
+  const cont = document.getElementById("provList");
+  if(proveedores.length===0){
+    cont.innerHTML = `<p class="empty-note">Todavía no cargaste proveedores. Agregá el primero abajo.</p>`;
+    return;
+  }
+  cont.innerHTML = proveedores.map(p => `
+    <div class="prov-item">
+      <div>
+        <div class="name">${p.nombre}</div>
+        <span class="count">${p.count} producto${p.count===1?"":"s"}</span>
+      </div>
+      <div class="prov-actions">
+        <button class="icon-btn" title="Subir lista Excel" onclick="abrirSubida('${p.id}')">📄</button>
+        <button class="icon-btn danger" title="Borrar proveedor" onclick="borrarProveedor('${p.id}')">🗑️</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+document.getElementById("btnAddProv").addEventListener("click", async ()=>{
+  const nombre = document.getElementById("newProvName").value.trim();
+  if(!nombre) return;
+  const { error } = await sb.from("proveedores").insert({ user_id: currentUser.id, nombre });
+  if(error){ alert("No se pudo agregar: " + error.message); return; }
+  document.getElementById("newProvName").value = "";
+  cargarProveedores();
+});
+
+async function borrarProveedor(id){
+  if(!confirm("¿Borrar este proveedor y TODOS sus productos cargados?")) return;
+  const { error } = await sb.from("proveedores").delete().eq("id", id);
+  if(error){ alert("No se pudo borrar: " + error.message); return; }
+  cargarProveedores();
+}
+
+/* ================== SUBIDA Y MAPEO DE EXCEL ================== */
+function abrirSubida(provId){
+  uploadTargetProvId = provId;
+  document.getElementById("fileInput").click();
+}
+
+document.getElementById("fileInput").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, { type:"array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    excelRows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:"" });
+    prepararModalImportacion();
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = ""; // permite volver a elegir el mismo archivo después
+});
+
+function prepararModalImportacion(){
+  if(excelRows.length===0){ alert("El archivo parece estar vacío."); return; }
+
+  const primeraFila = excelRows[0];
+  const opciones = primeraFila.map((val, i)=> `<option value="${i}">Columna ${i+1} (ej: "${String(val).slice(0,20)}")</option>`).join("");
+
+  ["colCodigo","colNombre","colPrecio"].forEach(id=>{
+    document.getElementById(id).innerHTML = opciones;
+  });
+  document.getElementById("colCaja").innerHTML =
+    `<option value="-1">No aplica (se vende por unidad)</option>` + opciones;
+
+  // Sugerencia automática simple por si algún encabezado coincide
+  const header = primeraFila.map(h=>String(h).toLowerCase());
+  const tryMatch = (keywords)=> header.findIndex(h => keywords.some(k=>h.includes(k)));
+  const iCod = tryMatch(["cod","sku","art"]);
+  const iNom = tryMatch(["nombre","descrip","producto","detalle"]);
+  const iPre = tryMatch(["precio","costo","$"]);
+  const iCaja = tryMatch(["caja","bulto","paq","pack","x un","xun","envase"]);
+  if(iCod>=0) document.getElementById("colCodigo").value = iCod;
+  if(iNom>=0) document.getElementById("colNombre").value = iNom;
+  if(iPre>=0) document.getElementById("colPrecio").value = iPre;
+  if(iCaja>=0) document.getElementById("colCaja").value = iCaja;
+
+  renderPreviewTable();
+  document.getElementById("importStatus").textContent = "";
+  document.getElementById("uploadModal").classList.add("open");
+}
+
+function renderPreviewTable(){
+  const filas = excelRows.slice(0, 6);
+  const table = document.getElementById("previewTable");
+  table.innerHTML = filas.map((fila, i)=>
+    `<tr>${fila.map(celda => `<${i===0?"th":"td"}>${celda}</${i===0?"th":"td"}>`).join("")}</tr>`
+  ).join("");
+}
+
+document.getElementById("uploadClose").addEventListener("click", ()=>{
+  document.getElementById("uploadModal").classList.remove("open");
+});
+
+document.getElementById("btnConfirmImport").addEventListener("click", async ()=>{
+  const iCod = parseInt(document.getElementById("colCodigo").value);
+  const iNom = parseInt(document.getElementById("colNombre").value);
+  const iPre = parseInt(document.getElementById("colPrecio").value);
+  const iCaja = parseInt(document.getElementById("colCaja").value); // -1 = no aplica
+  const tieneEncabezado = document.getElementById("hasHeader").checked;
+  const statusEl = document.getElementById("importStatus");
+
+  const filas = tieneEncabezado ? excelRows.slice(1) : excelRows;
+  const productosNuevos = filas
+    .filter(f => f[iNom] && String(f[iNom]).trim()!=="")
+    .map(f => {
+      let unidadPorCaja = 1;
+      if(iCaja >= 0){
+        const raw = parseFloat(String(f[iCaja] ?? "1").replace(/[^0-9.,-]/g,"").replace(",","."));
+        unidadPorCaja = raw > 0 ? raw : 1;
+      }
+      return {
+        user_id: currentUser.id,
+        proveedor_id: uploadTargetProvId,
+        codigo: String(f[iCod] ?? "").trim(),
+        nombre: String(f[iNom] ?? "").trim(),
+        precio_costo: parseFloat(String(f[iPre] ?? "0").replace(/[^0-9.,-]/g,"").replace(",",".")) || 0,
+        unidad_por_caja: unidadPorCaja
+        // OJO: "margen" queda afuera a propósito. Si el producto ya existía,
+        // así no le pisamos el margen que el ferretero ya había ajustado a mano.
+        // Si es un producto nuevo, la base de datos le pone 30% por defecto sola.
+      };
+    });
+
+  if(productosNuevos.length===0){
+    statusEl.textContent = "No se encontraron filas válidas para importar.";
+    statusEl.className = "status-note err";
+    return;
+  }
+
+  // Separamos los que tienen código (se pueden actualizar sin duplicar)
+  // de los que no tienen código (siempre se agregan como nuevos).
+  const conCodigo = productosNuevos.filter(p => p.codigo !== "");
+  const sinCodigo = productosNuevos.filter(p => p.codigo === "");
+
+  statusEl.textContent = `Importando ${productosNuevos.length} productos...`;
+  statusEl.className = "status-note";
+
+  const tanda = 500;
+
+  for(let i=0; i<conCodigo.length; i+=tanda){
+    const lote = conCodigo.slice(i, i+tanda);
+    const { error } = await sb.from("productos").upsert(lote, { onConflict: "proveedor_id,codigo" });
+    if(error){
+      statusEl.textContent = "Error al importar: " + error.message;
+      statusEl.className = "status-note err";
+      return;
+    }
+  }
+
+  for(let i=0; i<sinCodigo.length; i+=tanda){
+    const lote = sinCodigo.slice(i, i+tanda);
+    const { error } = await sb.from("productos").insert(lote);
+    if(error){
+      statusEl.textContent = "Error al importar: " + error.message;
+      statusEl.className = "status-note err";
+      return;
+    }
+  }
+
+  statusEl.textContent = `✅ Se importaron ${productosNuevos.length} productos correctamente.`;
+  statusEl.className = "status-note ok";
+  cargarProveedores();
+  setTimeout(()=> document.getElementById("uploadModal").classList.remove("open"), 1200);
+});
+
+/* ================== BUSCADOR ================== */
+let searchTimeout = null;
+document.getElementById("searchInput").addEventListener("input", (e)=>{
+  clearTimeout(searchTimeout);
+  const q = e.target.value.trim();
+  if(q.length < 2){
+    document.getElementById("resultsContainer").innerHTML = "";
+    document.getElementById("searchHint").textContent = "Escribí al menos 2 letras para buscar en todas tus listas.";
+    return;
+  }
+  searchTimeout = setTimeout(()=> buscarProductos(q), 300);
+});
+
+async function buscarProductos(q){
+  document.getElementById("searchHint").textContent = "Buscando...";
+  const { data, error } = await sb
+    .from("productos")
+    .select("*, proveedores(nombre)")
+    .ilike("nombre", `%${q}%`)
+    .order("precio_costo", { ascending:true })
+    .limit(100);
+
+  if(error){
+    document.getElementById("searchHint").textContent = "Error al buscar: " + error.message;
+    return;
+  }
+
+  renderResultados(data || []);
+}
+
+function renderResultados(items){
+  const cont = document.getElementById("resultsContainer");
+  const hint = document.getElementById("searchHint");
+
+  if(items.length===0){
+    cont.innerHTML = "";
+    hint.textContent = "No encontramos productos con ese nombre en ninguna de tus listas.";
+    return;
+  }
+
+  // ordenamos por costo unitario real (costo de la caja / unidades por caja), no por costo de caja
+  const conUnitario = items.map(it => ({
+    ...it,
+    costo_unitario: it.precio_costo / (it.unidad_por_caja || 1)
+  })).sort((a,b) => a.costo_unitario - b.costo_unitario);
+
+  hint.textContent = `${items.length} resultado${items.length===1?"":"s"} encontrado${items.length===1?"":"s"}, ordenados de menor a mayor precio por unidad.`;
+  const unitarioMasBajo = conUnitario[0].costo_unitario;
+
+  cont.innerHTML = conUnitario.map(item=>{
+    const esMejor = item.costo_unitario === unitarioMasBajo;
+    const venta = item.costo_unitario * (1 + (item.margen||0)/100);
+    const esPorCaja = (item.unidad_por_caja || 1) > 1;
+    return `
+      <div class="result-card ${esMejor ? "best" : ""}">
+        <div class="result-info">
+          <div class="r-nombre">${item.nombre} ${esMejor ? '<span class="best-badge">MEJOR PRECIO</span>' : ""}</div>
+          <div class="r-meta">${item.proveedores?.nombre || "Proveedor"} ${item.codigo ? "· Código: " + item.codigo : ""}
+            ${esPorCaja ? `· Caja de ${item.unidad_por_caja} un. a $${Math.round(item.precio_costo).toLocaleString("es-AR")}` : ""}
+          </div>
+        </div>
+        <div class="r-costo">
+          <span class="label">Costo x unidad</span>
+          <span class="val mono">$ ${item.costo_unitario.toLocaleString("es-AR", {maximumFractionDigits:2})}</span>
+          ${esPorCaja ? `<input type="number" value="${item.unidad_por_caja}" title="Unidades por caja" style="width:56px; margin-top:4px; padding:3px 5px; border:1px solid var(--line); border-radius:5px; font-family:'IBM Plex Mono',monospace; font-size:11.5px;" onchange="actualizarUnidadCaja('${item.id}', this.value, this)">` : ""}
+        </div>
+        <div class="r-margen">
+          <label>Margen %</label>
+          <input type="number" value="${item.margen}" onchange="actualizarMargen('${item.id}', this.value, this)">
+        </div>
+        <div class="r-venta">
+          <span class="label">Venta x unidad</span>
+          <span class="val" id="venta-${item.id}">$ ${venta.toLocaleString("es-AR", {maximumFractionDigits:2})}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function actualizarUnidadCaja(id, nuevoValor, inputEl){
+  const unidadPorCaja = parseFloat(nuevoValor) || 1;
+  const { error } = await sb.from("productos").update({ unidad_por_caja: unidadPorCaja }).eq("id", id);
+  if(error){ alert("No se pudo guardar: " + error.message); return; }
+
+  const row = inputEl.closest(".result-card");
+  const costoCajaTexto = row.querySelector(".r-meta").textContent.match(/\$([0-9.]+)/);
+  // recalculamos disparando una nueva búsqueda simple para mantener todo coherente
+  const q = document.getElementById("searchInput").value.trim();
+  if(q.length>=2) buscarProductos(q);
+}
+
+async function actualizarMargen(id, nuevoMargen, inputEl){
+  const margen = parseFloat(nuevoMargen) || 0;
+  const { error } = await sb.from("productos").update({ margen }).eq("id", id);
+  if(error){ alert("No se pudo guardar el margen: " + error.message); return; }
+
+  // recalculamos el precio de venta en pantalla sin tener que re-buscar todo
+  const row = inputEl.closest(".result-card");
+  const costoTexto = row.querySelector(".r-costo .val").textContent.replace(/[^0-9]/g,"");
+  const costo = parseFloat(costoTexto);
+  const venta = costo * (1 + margen/100);
+  row.querySelector(".r-venta .val").textContent = "$ " + Math.round(venta).toLocaleString("es-AR");
+}
+</script>
+</body>
+</html>
