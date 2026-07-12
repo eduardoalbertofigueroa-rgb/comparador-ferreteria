@@ -450,6 +450,21 @@ function abrirSubida(provId){
   document.getElementById("fileInput").click();
 }
 
+function limitarColumnasReales(rows){
+  // Algunos Excel quedan con formato aplicado a miles de columnas vacías de más
+  // (por accidente, al seleccionar toda la hoja y pintarla, por ejemplo).
+  // Esto detecta hasta dónde hay datos de verdad y recorta el resto, para que
+  // el navegador no se cuelgue procesando columnas fantasma.
+  let maxCol = 0;
+  rows.slice(0, 30).forEach(fila=>{
+    for(let i = Math.min(fila.length, 200) - 1; i >= 0; i--){
+      if(String(fila[i] ?? "").trim() !== ""){ if(i > maxCol) maxCol = i; break; }
+    }
+  });
+  maxCol = Math.min(maxCol, 60); // tope de seguridad, nunca más de 60 columnas
+  return rows.map(fila => fila.slice(0, maxCol + 1));
+}
+
 document.getElementById("fileInput").addEventListener("change", (e)=>{
   const file = e.target.files[0];
   if(!file) return;
@@ -458,11 +473,13 @@ document.getElementById("fileInput").addEventListener("change", (e)=>{
     const data = new Uint8Array(ev.target.result);
     const wb = XLSX.read(data, { type:"array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    excelRows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:"" });
+    const rowsCrudas = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:"" });
+    excelRows = limitarColumnasReales(rowsCrudas);
     prepararModalImportacion();
   };
+  reader.onerror = ()=> alert("No se pudo leer el archivo. Probá de nuevo.");
   reader.readAsArrayBuffer(file);
-  e.target.value = ""; // permite volver a elegir el mismo archivo después
+  e.target.value = "";
 });
 
 function prepararModalImportacion(){
