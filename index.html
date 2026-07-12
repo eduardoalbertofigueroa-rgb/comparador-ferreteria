@@ -265,8 +265,8 @@
       <!-- Buscador y resultados -->
       <section>
         <div class="search-hero">
-          <input type="text" id="searchInput" placeholder="Buscá un producto... ej: destornillador phillips">
-          <div class="search-hint" id="searchHint">Escribí al menos 2 letras para buscar en todas tus listas.</div>
+          <input type="text" id="searchInput" placeholder="Buscá por nombre o código... ej: destornillador phillips o 5208">
+          <div class="search-hint" id="searchHint">Escribí al menos 2 letras o números para buscar en todas tus listas.</div>
         </div>
         <div id="resultsContainer"></div>
       </section>
@@ -613,7 +613,7 @@ document.getElementById("searchInput").addEventListener("input", (e)=>{
   const q = e.target.value.trim();
   if(q.length < 2){
     document.getElementById("resultsContainer").innerHTML = "";
-    document.getElementById("searchHint").textContent = "Escribí al menos 2 letras para buscar en todas tus listas.";
+    document.getElementById("searchHint").textContent = "Escribí al menos 2 letras o números para buscar en todas tus listas.";
     return;
   }
   searchTimeout = setTimeout(()=> buscarProductos(q), 300);
@@ -624,7 +624,7 @@ async function buscarProductos(q){
   const { data, error } = await sb
     .from("productos")
     .select("*, proveedores(nombre)")
-    .ilike("nombre", `%${q}%`)
+    .or(`nombre.ilike.%${q}%,codigo.ilike.%${q}%`)
     .order("precio_costo", { ascending:true })
     .limit(100);
 
