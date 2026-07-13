@@ -874,7 +874,7 @@ function renderResultados(items){
     const venta = item.costo_unitario * (1 + (item.margen||0)/100);
     const esPorCaja = (item.unidad_por_caja || 1) > 1;
     return `
-      <div class="result-card ${esMejor ? "best" : ""}">
+      <div class="result-card ${esMejor ? "best" : ""}" data-costo-real="${item.costo_unitario}">
         <div class="result-info">
           <div class="r-nombre">${item.nombre} ${esMejor ? '<span class="best-badge">MEJOR PRECIO</span>' : ""}</div>
           <div class="r-meta">${item.proveedores?.nombre || "Proveedor"} ${item.codigo ? "· Código: " + item.codigo : ""}
@@ -915,12 +915,11 @@ async function actualizarMargen(id, nuevoMargen, inputEl){
   const { error } = await sb.from("productos").update({ margen }).eq("id", id);
   if(error){ alert("No se pudo guardar el margen: " + error.message); return; }
 
-  // recalculamos el precio de venta en pantalla sin tener que re-buscar todo
+  // recalculamos el precio de venta usando el número real guardado (no el texto en pantalla)
   const row = inputEl.closest(".result-card");
-  const costoTexto = row.querySelector(".r-costo .val").textContent.replace(/[^0-9]/g,"");
-  const costo = parseFloat(costoTexto);
+  const costo = parseFloat(row.dataset.costoReal) || 0;
   const venta = costo * (1 + margen/100);
-  row.querySelector(".r-venta .val").textContent = "$ " + Math.round(venta).toLocaleString("es-AR");
+  row.querySelector(".r-venta .val").textContent = "$ " + venta.toLocaleString("es-AR", {maximumFractionDigits:2});
 }
 </script>
 </body>
