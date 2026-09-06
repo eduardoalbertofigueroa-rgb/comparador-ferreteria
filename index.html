@@ -394,13 +394,14 @@ let proveedores = [];
 let uploadTargetProvId = null;
 let excelRows = []; // filas crudas del último excel leído
 
-// Saca acentos, pasa a minúscula, y reemplaza cualquier signo (paréntesis, guiones, etc.)
-// por espacio. Así "Mecha (Acero Rápido)" y "mecha acero rapido" terminan siendo lo mismo.
+// Saca acentos, pasa a minúscula, y limpia signos decorativos (paréntesis, comas, comillas).
+// A propósito NO toca la barra "/", porque en ferretería "3/8" es una medida, no dos números sueltos.
 function normalizarTexto(s){
   return String(s)
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[(),."'`]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -848,7 +849,9 @@ async function buscarProductos(q){
 
   // Buscamos por palabras sueltas, ignorando acentos, mayúsculas y signos de puntuación:
   // cada palabra tiene que aparecer (en nombre O en código), sin importar el orden.
-  const palabras = normalizarTexto(q).split(/\s+/).filter(Boolean);
+  // Ignoramos palabras de una sola letra (como la "x" de "3/8 x 3/4"): no ayudan a filtrar,
+  // solo meten resultados de más porque aparecen dentro de casi cualquier código.
+  const palabras = normalizarTexto(q).split(/\s+/).filter(p => p.length > 1);
 
   let query = sb.from("productos").select("*, proveedores(nombre)");
   palabras.forEach(palabra=>{
@@ -863,7 +866,25 @@ async function buscarProductos(q){
     return;
   }
 
-  renderResultados(data || []);
+  // Reordenamos: primero los resultados que tienen TODAS las palabras buscadas
+  // como coincidencia exacta de palabra completa (no solo "contiene"), después
+  // los que las tienen como substring nomás, y al final el resto.
+  const puntuar = (prod)=>{
+    const nombreNorm = normalizarTexto(prod.nombre || "");
+    const tokensNombre = nombreNorm.split(/\s+/);
+    let puntos = 0;
+    palabras.forEach(palabra=>{
+      if(tokensNombre.includes(palabra)) puntos += 2;       // palabra completa exacta
+      else if(nombreNorm.includes(palabra)) puntos += 1;    // solo aparece como parte de otra palabra
+    });
+    return puntos;
+  };
+
+  const ordenados = (data || [])
+    .map(p => ({ ...p, _score: puntuar(p) }))
+    .sort((a,b)=> b._score - a._score || (a.precio_costo - b.precio_costo));
+
+  renderResultados(ordenados);
 }
 
 function renderResultados(items){
