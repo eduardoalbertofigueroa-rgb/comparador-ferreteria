@@ -849,9 +849,10 @@ async function buscarProductos(q){
 
   // Buscamos por palabras sueltas, ignorando acentos, mayúsculas y signos de puntuación:
   // cada palabra tiene que aparecer (en nombre O en código), sin importar el orden.
-  // Ignoramos palabras de una sola letra (como la "x" de "3/8 x 3/4"): no ayudan a filtrar,
-  // solo meten resultados de más porque aparecen dentro de casi cualquier código.
-  const palabras = normalizarTexto(q).split(/\s+/).filter(p => p.length > 1);
+  // Ignoramos LETRAS sueltas (como la "x" de "3/8 x 3/4"): no ayudan a filtrar.
+  // Pero los NÚMEROS sueltos de un solo dígito los dejamos, porque en medidas
+  // ferreteras importan (ej: el "1" de "1 1/4" no es ruido, es parte de la medida).
+  const palabras = normalizarTexto(q).split(/\s+/).filter(p => p.length > 1 || /^[0-9]$/.test(p));
 
   let query = sb.from("productos").select("*, proveedores(nombre)");
   palabras.forEach(palabra=>{
