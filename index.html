@@ -384,6 +384,11 @@ const SUPABASE_KEY = "sb_publishable_wVWL-o7nfT4aHxjBD5XrQw_P1zcZ8pD";
 const WHATSAPP_SOPORTE = "5492364316208"; // tu número, para cuando alguien necesita reactivar su cuenta
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Detectamos "a mano" si esta carga de página viene de un link de recuperación de contraseña.
+// Lo hacemos ANTES de que Supabase limpie la URL, porque si el usuario ya tenía una sesión
+// guardada en este navegador, el evento PASSWORD_RECOVERY puede no dispararse a tiempo.
+const esLinkDeRecuperacion = window.location.hash.includes("type=recovery");
+
 let currentUser = null;
 let proveedores = [];
 let uploadTargetProvId = null;
@@ -453,6 +458,7 @@ document.getElementById("btnSetNewPass").addEventListener("click", async ()=>{
   if(error){ errEl.textContent = error.message; errEl.style.display = "block"; return; }
   msgEl.textContent = "¡Contraseña actualizada! Ya podés usar la app con normalidad.";
   msgEl.style.display = "block";
+  setTimeout(()=>{ window.location.href = window.location.pathname; }, 1800);
 });
 
 document.getElementById("btnLogoutLock").addEventListener("click", async ()=>{ await sb.auth.signOut(); });
@@ -488,7 +494,7 @@ async function chequearSuscripcion(user){
 }
 
 sb.auth.onAuthStateChange(async (event, session)=>{
-  if(event === "PASSWORD_RECOVERY"){
+  if(event === "PASSWORD_RECOVERY" || (esLinkDeRecuperacion && session)){
     ocultarTodasLasPantallas();
     document.getElementById("resetScreen").style.display = "flex";
     return;
